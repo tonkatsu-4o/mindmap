@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas MindMap</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --bg-color: #f8f9fa;
+        }
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            font-family: sans-serif;
+            background: var(--bg-color);
+        }
+
+        /* --- UI共通 --- */
+        button {
+            padding: 4px 8px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: white;
+            color: #333;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        button:hover:not(:disabled) { background: #eee; }
+        button:disabled { color: #ccc; cursor: not-allowed; border-color: #eee; background: #f9f9f9; }
+        
+        button.primary { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+        button.primary:hover:not(:disabled) { background: #0056b3; }
+        
+        button.danger { background: #dc3545; color: white; border-color: #dc3545; }
+        button.danger:hover:not(:disabled) { background: #bd2130; }
+
+        button.active { background: #28a745; color: white; border-color: #28a745; }
+        button.selected-state { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+
+        /* --- ホーム画面 --- */
+        #home-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: white; z-index: 100;
+            display: flex; flex-direction: column; align-items: center; padding-top: 50px;
+        }
+        .map-list {
+            width: 90%; max-width: 800px; margin-top: 20px;
+            border: 1px solid #ddd; border-radius: 8px;
+            max-height: 80vh; overflow-y: auto;
+        }
+        .map-item {
+            padding: 10px 15px; border-bottom: 1px solid #eee;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .map-name-input {
+            font-size: 16px; padding: 5px; border: 1px solid transparent; 
+            background: transparent; width: 250px;
+        }
+        .map-name-input:focus { border-color: var(--primary-color); background: #fff; }
+        .map-meta { font-size: 12px; color: #888; margin-left: 10px; min-width: 120px; display: inline-block;}
+        
+        /* --- エディタ画面 --- */
+        #editor-screen {
+            display: none; position: relative; width: 100%; height: 100%;
+        }
+        canvas { display: block; outline: none; }
+
+        #map-title-header {
+            position: absolute; top: 15px; left: 20px;
+            font-size: 18px; font-weight: bold; color: #333;
+            background: rgba(255,255,255,0.8); padding: 5px 10px; border-radius: 4px;
+            pointer-events: none; z-index: 5;
+        }
+
+        #toolbar {
+            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            background: white; padding: 6px; border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; gap: 5px;
+            z-index: 10;
+            align-items: center;
+            flex-wrap: wrap; justify-content: center;
+        }
+
+        #property-panel {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: white; padding: 6px; border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: none; gap: 8px; flex-wrap: wrap; justify-content: center;
+            z-index: 10;
+            align-items: center;
+        }
+        .panel-section { display: flex; gap: 10px; align-items: center; }
+        .panel-group { display: flex; align-items: center; gap: 4px; border-right: 1px solid #eee; padding-right: 8px; }
+        .panel-group:last-child { border: none; padding-right: 0; }
+        .color-group { display: flex; gap: 8px; }
+        .color-row { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+        .color-presets { display: flex; gap: 2px; }
+        .color-btn {
+            width: 14px; height: 14px; border: 1px solid #ccc; cursor: pointer; border-radius: 2px;
+        }
+        .color-btn:hover { border-color: #000; transform: scale(1.1); }
+
+        #toast-notification {
+            position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); color: white; padding: 10px 20px;
+            border-radius: 20px; font-size: 14px; opacity: 0; pointer-events: none;
+            transition: opacity 0.3s; z-index: 100;
+        }
+
+        #delete-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 200;
+            display: none; align-items: center; justify-content: center;
+        }
+        .modal-content {
+            background: white; padding: 20px; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2); text-align: center;
+            min-width: 300px;
+        }
+        .modal-buttons { margin-top: 20px; display: flex; justify-content: center; gap: 10px; }
+
+        #text-editor {
+            position: absolute; display: none;
+            background: transparent; border: 1px solid var(--primary-color);
+            padding: 0; margin: 0; outline: none; resize: none;
+            text-align: center; overflow: hidden; white-space: nowrap;
+            color: black; font-family: sans-serif;
+            z-index: 50;
+        }
+        
+        input[type="color"] {
+            width: 20px; height: 20px; padding: 0; border: none; cursor: pointer; border-radius: 2px;
+        }
+        input[type="number"] { width: 40px; padding: 2px; font-size: 11px; }
+
+        #context-menu {
+            position: fixed; background: white; border: 1px solid #ccc;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2); border-radius: 4px;
+            display: none; z-index: 1000; min-width: 180px;
+        }
+        .ctx-item {
+            padding: 8px 12px; cursor: pointer; font-size: 13px;
+            display: flex; justify-content: space-between;
+        }
+        .ctx-item:hover { background: #f0f0f0; }
+        .ctx-divider { height: 1px; background: #eee; margin: 2px 0; }
+        .ctx-shortcut { color: #888; font-size: 11px; margin-left: 10px; }
+    </style>
+</head>
+<body>
+
+    <!-- ホーム画面 -->
+    <div id="home-screen">
+        <h2>マインドマップ</h2>
+        <div style="display:flex; gap:10px;">
+            <button class="primary" onclick="createNewMap()">新規作成</button>
+            <button onclick="document.getElementById('import-file').click()">インポート</button>
+            <input type="file" id="import-file" style="display: none" accept=".json" onchange="importMap(this)">
+        </div>
+        <div class="map-list" id="map-list"></div>
+    </div>
+
+    <!-- 削除確認モーダル -->
+    <div id="delete-modal">
+        <div class="modal-content">
+            <h3>削除の確認</h3>
+            <p>このマインドマップを削除しますか？<br>この操作は元に戻せません。</p>
+            <div class="modal-buttons">
+                <button onclick="closeDeleteModal()">キャンセル</button>
+                <button class="danger" onclick="executeDelete()">削除する</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- コンテキストメニュー -->
+    <div id="context-menu"></div>
+
+    <!-- エディタ画面 -->
+    <div id="editor-screen">
+        <canvas id="canvas"></canvas>
+        <div id="map-title-header"></div>
+
+        <!-- 上部ツールバー -->
+        <div id="toolbar">
+            <button id="btn-undo" onclick="undo()" title="元に戻す (Ctrl+Z)" disabled>↶</button>
+            <button id="btn-redo" onclick="redo()" title="やり直し (Ctrl+Y)" disabled>↷</button>
+            <span style="width:1px; height:20px; background:#ccc; margin:0 5px;"></span>
+            
+            <button id="btn-add-node" onclick="addNode()">＋ノード</button>
+            <button id="btn-add-text" onclick="addTextNode()">＋文字</button>
+            <button id="btn-connect" onclick="toggleConnectMode()">エッジ</button>
+            
+            <span style="width:1px; height:20px; background:#ccc; margin:0 5px;"></span>
+            
+            <button onclick="zoomCanvas(0.1)" title="拡大">＋</button>
+            <button id="btn-zoom-reset" onclick="resetZoom()" title="リセット">100%</button>
+            <button onclick="zoomCanvas(-0.1)" title="縮小">－</button>
+            
+            <span style="width:1px; height:20px; background:#ccc; margin:0 5px;"></span>
+            
+            <button onclick="manualSave()">保存</button>
+            <button onclick="exportCurrentMap()">エクスポート</button>
+            <button onclick="exportSelectionAsImage()" title="選択範囲を画像保存">📷</button>
+            <button class="danger" onclick="closeMap()">閉じる</button>
+        </div>
+
+        <!-- 下部プロパティパネル -->
+        <div id="property-panel">
+            
+            <!-- ノード用操作 -->
+            <div id="panel-nodes" class="panel-section" style="display:none;">
+                <div class="panel-group">
+                    <div class="color-group">
+                        <div class="color-row">
+                            <span style="width:15px">背</span>
+                            <input type="color" id="picker-bg" oninput="updateStyle('bgColor', this.value)">
+                            <div class="color-presets">
+                                <div class="color-btn" style="background:#ffffff" onclick="updateStyle('bgColor', '#ffffff')" title="白"></div>
+                                <div class="color-btn" style="background:#9e9e9e" onclick="updateStyle('bgColor', '#9e9e9e')" title="グレー"></div>
+                                <div class="color-btn" style="background:#ffcdd2" onclick="updateStyle('bgColor', '#ffcdd2')" title="赤"></div>
+                                <div class="color-btn" style="background:#bbdefb" onclick="updateStyle('bgColor', '#bbdefb')" title="青"></div>
+                                <div class="color-btn" style="background:#c8e6c9" onclick="updateStyle('bgColor', '#c8e6c9')" title="緑"></div>
+                                <div class="color-btn" style="background:#fff9c4" onclick="updateStyle('bgColor', '#fff9c4')" title="黄"></div>
+                                <div class="color-btn" style="background:transparent; border:1px dashed #aaa;" onclick="updateStyle('bgColor', 'transparent')" title="透明"></div>
+                            </div>
+                        </div>
+                        <div class="color-row">
+                            <span style="width:15px">文</span>
+                            <input type="color" id="picker-text" oninput="updateStyle('textColor', this.value)">
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-group">
+                    <button id="btn-size-S" onclick="updateStyle('size', 'S')">S</button>
+                    <button id="btn-size-M" onclick="updateStyle('size', 'M')">M</button>
+                    <button id="btn-size-L" onclick="updateStyle('size', 'L')">L</button>
+                    <span style="font-size:11px;">W:</span>
+                    <input type="number" id="input-width" min="10" step="10" oninput="updateStyle('width', this.value)" onkeydown="event.stopPropagation()">
+                    <span style="font-size:11px;">H:</span>
+                    <input type="number" id="input-height" min="10" step="10" oninput="updateStyle('height', this.value)" onkeydown="event.stopPropagation()">
+                    <span style="font-size:11px;">Tx:</span>
+                    <input type="number" id="input-font-size" min="8" max="100" step="1" oninput="updateStyle('fontSize', this.value)" onkeydown="event.stopPropagation()">
+                    <button id="btn-text-vertical" onclick="toggleVertical()" style="font-size:11px; padding:2px 5px;">縦</button>
+                </div>
+                <div class="panel-group">
+                    <button onclick="alignNodes('h')">横揃</button>
+                    <button onclick="alignNodes('v')">縦揃</button>
+                </div>
+            </div>
+
+            <!-- エッジ用操作 -->
+            <div id="panel-edges" class="panel-section" style="display:none;">
+                <div class="panel-group">
+                    <div class="color-row">
+                        <span>色:</span>
+                        <input type="color" id="picker-line-color" oninput="updateStyle('lineColor', this.value)">
+                        <div class="color-presets">
+                            <div class="color-btn" style="background:#555555" onclick="updateStyle('lineColor', '#555555')" title="標準"></div>
+                            <div class="color-btn" style="background:#dc3545" onclick="updateStyle('lineColor', '#dc3545')" title="赤"></div>
+                            <div class="color-btn" style="background:#007bff" onclick="updateStyle('lineColor', '#007bff')" title="青"></div>
+                            <div class="color-btn" style="background:#28a745" onclick="updateStyle('lineColor', '#28a745')" title="緑"></div>
+                            <div class="color-btn" style="background:#ffc107" onclick="updateStyle('lineColor', '#ffc107')" title="黄"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-group">
+                    <button id="btn-shape-straight" onclick="updateStyle('lineShape', 'straight')" style="padding:2px 6px;">直</button>
+                    <button id="btn-shape-elbow" onclick="updateStyle('lineShape', 'elbow')" style="padding:2px 6px;">L</button>
+                </div>
+                <div class="panel-group" style="display:flex; gap:2px;">
+                    <button id="btn-arrow-one" onclick="setArrowMode('one')" style="padding:2px 6px;">→</button>
+                    <button id="btn-arrow-both" onclick="setArrowMode('both')" style="padding:2px 6px;">↔</button>
+                    <button onclick="reverseEdge()" style="padding:2px 6px;">反転</button>
+                </div>
+                <div class="panel-group">
+                    <button id="btn-style-solid" onclick="updateStyle('lineStyle', 'solid')">実</button>
+                    <button id="btn-style-dotted" onclick="updateStyle('lineStyle', 'dotted')">点</button>
+                    <button id="btn-width-thin" onclick="updateStyle('lineWidth', 'thin')">細</button>
+                    <button id="btn-width-thick" onclick="updateStyle('lineWidth', 'thick')">太</button>
+                </div>
+            </div>
+
+            <!-- グループ用操作 -->
+            <div id="panel-groups" class="panel-section" style="display:none;">
+                <div class="panel-group">
+                    <span>色:</span>
+                    <input type="color" id="picker-group-color" oninput="updateStyle('groupColor', this.value)">
+                </div>
+                <div class="panel-group">
+                    <button id="btn-g-width-thin" onclick="updateStyle('groupWidth', 'thin')">細</button>
+                    <button id="btn-g-width-thick" onclick="updateStyle('groupWidth', 'thick')">太</button>
+                </div>
+            </div>
+
+            <!-- 共通削除ボタン -->
+            <button class="danger" onclick="deleteSelection()">削除</button>
+        </div>
+
+        <!-- トースト通知 -->
+        <div id="toast-notification">保存しました</div>
+
+        <!-- テキスト入力用隠しエリア -->
+        <textarea id="text-editor"></textarea>
+    </div>
+
+<script>
+/** 定数・設定 */
+const SIZES = {
+    S: { w: 80, h: 40, font: '12px sans-serif', fontSize: 12 },
+    M: { w: 120, h: 60, font: '16px sans-serif', fontSize: 16 },
+    L: { w: 180, h: 90, font: '24px sans-serif', fontSize: 24 },
+    JOINT: { w: 8, h: 8, font: '0px sans-serif', fontSize: 0 } 
+};
+let maps = [];
+try { maps = JSON.parse(localStorage.getItem('mindmaps_canvas') || '[]'); } catch (e) { maps = []; }
+let currentMap = null;
+let deleteTargetId = null;
+let historyStack = []; let historyIndex = -1; const MAX_HISTORY = 30;
+let clipboard = null;
+const canvas = document.getElementById('canvas'); const ctx = canvas.getContext('2d');
+let camera = { x: 0, y: 0, zoom: 1 }; 
+let isDragging = false; let dragStart = { x: 0, y: 0 }; let dragTarget = null; 
+let resizeTargetId = null; let isNodeMoved = false; let snapLines = []; 
+let selection = { nodes: new Set(), conns: new Set(), groups: new Set() };
+let mode = 'select'; let connectStartNode = null; let editingObj = null;
+const contextMenu = document.getElementById('context-menu');
+let longPressTimer = null; let isMarquee = false; let marqueeRect = null; 
+const textEditor = document.getElementById('text-editor');
+
+/* 初期化 */
+window.addEventListener('resize', resizeCanvas);
+canvas.addEventListener('mousedown', handleMouseDown);
+window.addEventListener('mousemove', handleMouseMove);
+window.addEventListener('mouseup', handleMouseUp);
+canvas.addEventListener('wheel', handleWheel, { passive: false }); 
+canvas.addEventListener('dblclick', handleDoubleClick);
+canvas.addEventListener('contextmenu', handleContextMenu); 
+document.addEventListener('keydown', handleKeyDown);
+document.addEventListener('click', () => { contextMenu.style.display = 'none'; });
+textEditor.addEventListener('blur', finishEditing);
+textEditor.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); textEditor.blur(); }});
+initHome();
+
+/* --- ロジック --- */
+function initHome() { renderMapList(); }
+function renderMapList() {
+    const list = document.getElementById('map-list'); list.innerHTML = '';
+    if (maps.length === 0) { list.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">マップがありません。<br>「新規作成」を押して始めましょう。</div>'; return; }
+    maps.sort((a,b) => b.updatedAt - a.updatedAt);
+    maps.forEach(map => {
+        const div = document.createElement('div'); div.className = 'map-item';
+        const dateObj = new Date(map.updatedAt);
+        const dateStr = dateObj.toLocaleDateString('ja-JP') + ' ' + dateObj.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+        div.innerHTML = `<span><input class="map-name-input" type="text" value="${map.name}" onchange="updateMapName('${map.id}', this.value)" onclick="event.stopPropagation()"><span class="map-meta">(${dateStr})</span></span><div style="display:flex; gap:5px;"><button class="primary" onclick="loadMap('${map.id}')">開く</button><button onclick="duplicateMap('${map.id}')">複製</button><button class="danger" onclick="openDeleteModal('${map.id}')">削除</button></div>`;
+        list.appendChild(div);
+    });
+}
+function updateMapName(id, newName) { const map = maps.find(m => m.id === id); if (map) { map.name = newName; map.updatedAt = Date.now(); saveMaps(); renderMapList(); } }
+function createNewMap() { const id = Date.now().toString(); const newMap = { id, name: '新しいマインドマップ', updatedAt: Date.now(), nodes: [], connections: [], groups: [], camera: { x: 0, y: 0, zoom: 1 } }; maps.push(newMap); saveMaps(); loadMap(id); }
+function duplicateMap(id) { const s = maps.find(m => m.id === id); if(!s) return; const n = JSON.parse(JSON.stringify(s)); n.id = Date.now().toString(); n.name += " のコピー"; n.updatedAt = Date.now(); maps.push(n); saveMaps(); renderMapList(); }
+function loadMap(id) { currentMap = maps.find(m => m.id === id); if (!currentMap) return; if (!currentMap.groups) currentMap.groups = []; camera = currentMap.camera || { x: 0, y: 0, zoom: 1 }; selection = { nodes: new Set(), conns: new Set(), groups: new Set() }; mode = 'select'; updateModeUI(); document.getElementById('map-title-header').innerText = currentMap.name; historyStack = []; historyIndex = -1; recordHistory(); document.getElementById('home-screen').style.display = 'none'; document.getElementById('editor-screen').style.display = 'block'; resizeCanvas(); draw(); }
+function closeMap() { saveCurrentMap(); document.getElementById('editor-screen').style.display = 'none'; document.getElementById('home-screen').style.display = 'flex'; renderMapList(); }
+function openDeleteModal(id) { deleteTargetId = id; document.getElementById('delete-modal').style.display = 'flex'; }
+function closeDeleteModal() { deleteTargetId = null; document.getElementById('delete-modal').style.display = 'none'; }
+function executeDelete() { if (!deleteTargetId) return; maps = maps.filter(m => m.id !== deleteTargetId); saveMaps(); renderMapList(); closeDeleteModal(); }
+function saveMaps() { localStorage.setItem('mindmaps_canvas', JSON.stringify(maps)); }
+function saveCurrentMap() { if (!currentMap) return; currentMap.updatedAt = Date.now(); currentMap.camera = camera; saveMaps(); }
+function manualSave() { saveCurrentMap(); showToast(); }
+function showToast() { const toast = document.getElementById('toast-notification'); toast.style.opacity = '1'; setTimeout(() => { toast.style.opacity = '0'; }, 1500); }
+function exportCurrentMap() { saveCurrentMap(); const blob = new Blob([JSON.stringify(currentMap)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = (currentMap.name||'mindmap') + '.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
+function importMap(input) { const file = input.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = e => { try { const map = JSON.parse(e.target.result); map.id = Date.now().toString(); map.name = "Imported: " + (map.name||'map'); if(!map.groups) map.groups = []; maps.push(map); saveMaps(); renderMapList(); alert('インポートしました'); } catch(err) { alert('読み込み失敗'); } }; reader.readAsText(file); input.value = ''; }
+
+function recordHistory() { if (!currentMap) return; if (historyIndex < historyStack.length - 1) historyStack = historyStack.slice(0, historyIndex + 1); const state = JSON.parse(JSON.stringify({ nodes: currentMap.nodes, connections: currentMap.connections, groups: currentMap.groups })); historyStack.push(state); if (historyStack.length > MAX_HISTORY) historyStack.shift(); else historyIndex++; updateUndoRedoUI(); }
+function undo() { if (historyIndex > 0) { historyIndex--; restoreState(historyStack[historyIndex]); updateUndoRedoUI(); } }
+function redo() { if (historyIndex < historyStack.length - 1) { historyIndex++; restoreState(historyStack[historyIndex]); updateUndoRedoUI(); } }
+function restoreState(state) { currentMap.nodes = JSON.parse(JSON.stringify(state.nodes)); currentMap.connections = JSON.parse(JSON.stringify(state.connections)); currentMap.groups = JSON.parse(JSON.stringify(state.groups || [])); selection = { nodes: new Set(), conns: new Set(), groups: new Set() }; draw(); }
+function updateUndoRedoUI() { document.getElementById('btn-undo').disabled = (historyIndex <= 0); document.getElementById('btn-redo').disabled = (historyIndex >= historyStack.length - 1); }
+
+function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; if(currentMap) draw(); }
+function updateZoomDisplay() { const btn = document.getElementById('btn-zoom-reset'); if(btn) btn.innerText = Math.round(camera.zoom * 100) + '%'; }
+function getObjBounds(id) { const n = currentMap.nodes.find(no => no.id === id); if(n) { const s = getSize(n); return { x: n.x, y: n.y, w: s.w, h: s.h, cx: n.x+s.w/2, cy: n.y+s.h/2 }; } const g = currentMap.groups.find(gr => gr.id === id); if(g) { let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity; g.nodeIds.forEach(nid=>{ const child = currentMap.nodes.find(no => no.id === nid); if(child) { const s = getSize(child); minX = Math.min(minX, child.x); minY = Math.min(minY, child.y); maxX = Math.max(maxX, child.x+s.w); maxY = Math.max(maxY, child.y+s.h); } }); if(minX===Infinity) return null; const p = 20; return { x: minX-p, y: minY-p-20, w: maxX-minX+p*2, h: maxY-minY+p*2+20, cx: (minX+maxX)/2, cy: (minY+maxY-20)/2 }; } return null; }
+
+function calculateAllEdgePoints() {
+    const nodePorts = {}; const allIds = new Set(); currentMap.nodes.forEach(n => allIds.add(n.id)); currentMap.groups.forEach(g => allIds.add(g.id)); allIds.forEach(id => { nodePorts[id] = { top: [], bottom: [], left: [], right: [] }; });
+    currentMap.connections.forEach(conn => {
+        conn._geometry = null; const bFrom = getObjBounds(conn.from); const bTo = getObjBounds(conn.to); if (!bFrom || !bTo) return;
+        let dx = bTo.cx - bFrom.cx; let dy = bTo.cy - bFrom.cy; let fromSide, toSide;
+        if (conn.shape === 'elbow') {
+            const topDist = Math.abs(bTo.cy - bFrom.y); const bottomDist = Math.abs(bTo.cy - (bFrom.y + bFrom.h));
+            const leftDist = Math.abs(bTo.cx - bFrom.x); const rightDist = Math.abs(bTo.cx - (bFrom.x + bFrom.w));
+            if (Math.abs(dx) > Math.abs(dy)) {
+                fromSide = dx > 0 ? 'right' : 'left'; toSide = dy > 0 ? 'top' : 'bottom';
+            } else {
+                fromSide = dy > 0 ? 'bottom' : 'top'; toSide = dx > 0 ? 'left' : 'right';
+            }
+        } else {
+            if (Math.abs(dx) < 2) dx = 0; if (Math.abs(dy) < 2) dy = 0;
+            const fromAspect = bFrom.h / bFrom.w; const absSlope = (dx === 0) ? Infinity : Math.abs(dy / dx);
+            if (absSlope < fromAspect) fromSide = dx >= 0 ? 'right' : 'left'; else fromSide = dy >= 0 ? 'bottom' : 'top';
+            const toAspect = bTo.h / bTo.w; const absSlopeTo = (dx === 0) ? Infinity : Math.abs(dy / dx);
+            if (absSlopeTo < toAspect) toSide = (-dx) >= 0 ? 'right' : 'left'; else toSide = (-dy) >= 0 ? 'bottom' : 'top';
+        }
+        conn._geometry = { dir1: fromSide, dir2: toSide }; 
+        if(nodePorts[conn.from]) nodePorts[conn.from][fromSide].push({ conn, otherBounds: bTo });
+        if(nodePorts[conn.to]) nodePorts[conn.to][toSide].push({ conn, otherBounds: bFrom });
+    });
+    allIds.forEach(id => {
+        const bounds = getObjBounds(id); if(!bounds) return;
+        ['top', 'bottom', 'left', 'right'].forEach(side => {
+            const list = nodePorts[id][side]; if (list.length === 0) return;
+            if (side === 'top' || side === 'bottom') list.sort((a, b) => a.otherBounds.cx - b.otherBounds.cx); else list.sort((a, b) => a.otherBounds.cy - b.otherBounds.cy);
+            list.forEach((item, index) => {
+                const ratio = (index + 1) / (list.length + 1); let px, py;
+                if (side === 'top') { px = bounds.x + bounds.w * ratio; py = bounds.y; }
+                else if (side === 'bottom') { px = bounds.x + bounds.w * ratio; py = bounds.y + bounds.h; }
+                else if (side === 'left') { px = bounds.x; py = bounds.y + bounds.h * ratio; }
+                else { px = bounds.x + bounds.w; py = bounds.y + bounds.h * ratio; }
+                if (!item.conn._geometry) item.conn._geometry = {};
+                if (item.conn.from === id) { item.conn._geometry.x1 = px; item.conn._geometry.y1 = py; } else { item.conn._geometry.x2 = px; item.conn._geometry.y2 = py; }
+            });
+        });
+    });
+}
+function getSize(node) { if (node.type === 'joint') return SIZES.JOINT; if (node.w && node.h) return { w: node.w, h: node.h, fontSize: node.fontSize || 16 }; return SIZES[node.size] || SIZES.M; }
+function draw() {
+    if(!currentMap) return; calculateAllEdgePoints(); updateZoomDisplay();
+    ctx.clearRect(0, 0, canvas.width, canvas.height); drawGrid();
+    ctx.save(); ctx.translate(camera.x, camera.y); ctx.scale(camera.zoom, camera.zoom);
+    if (currentMap.groups) currentMap.groups.forEach(g => drawGroup(ctx, g, false));
+    currentMap.connections.forEach(conn => {
+        if (conn._geometry && conn._geometry.x1 !== undefined) drawConnection(ctx, conn, false);
+        else { const f = getObjBounds(conn.from); const t = getObjBounds(conn.to); if(f && t) drawConnectionFallback(ctx, conn, f, t); }
+    });
+    currentMap.nodes.forEach(node => drawNode(ctx, node, false));
+    if (snapLines.length > 0) {
+        ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+        snapLines.forEach(line => { ctx.beginPath(); if (line.type === 'v') { ctx.moveTo(line.val, -10000); ctx.lineTo(line.val, 10000); } else { ctx.moveTo(-10000, line.val); ctx.lineTo(10000, line.val); } ctx.stroke(); });
+        ctx.setLineDash([]);
+    }
+    if (isMarquee && marqueeRect) {
+        ctx.fillStyle = 'rgba(0, 123, 255, 0.1)'; ctx.strokeStyle = '#007bff'; ctx.lineWidth = 1;
+        const x = (marqueeRect.x1 - camera.x) / camera.zoom; const y = (marqueeRect.y1 - camera.y) / camera.zoom;
+        const w = (marqueeRect.x2 - marqueeRect.x1) / camera.zoom; const h = (marqueeRect.y2 - marqueeRect.y1) / camera.zoom;
+        ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
+    }
+    ctx.restore(); updateUI();
+}
+function drawGrid() {
+    const step = 40 * camera.zoom; if(step < 10) return;
+    const offsetX = camera.x % step, offsetY = camera.y % step;
+    ctx.lineWidth = 1;
+    for (let x = offsetX; x < canvas.width; x += step) { ctx.strokeStyle = (Math.round((x - camera.x) / step) % 5 === 0) ? '#b0b0b0' : '#dcdcdc'; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+    for (let y = offsetY; y < canvas.height; y += step) { ctx.strokeStyle = (Math.round((y - camera.y) / step) % 5 === 0) ? '#b0b0b0' : '#dcdcdc'; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+}
+function drawGroup(context, group, isExport) {
+    const bounds = getObjBounds(group.id); if(!bounds) return;
+    if (!isExport && selection.groups.has(group.id)) { context.fillStyle = 'rgba(0, 123, 255, 0.1)'; context.fillRect(bounds.x, bounds.y, bounds.w, bounds.h); }
+    context.strokeStyle = group.color || '#888'; 
+    context.lineWidth = group.width === 'thick' ? 3 : 1; 
+    context.setLineDash([5, 5]);
+    context.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h); context.setLineDash([]);
+    context.fillStyle = group.color || '#666'; context.font = 'bold 14px sans-serif'; context.textAlign = 'left'; context.textBaseline = 'top';
+    if (!editingObj || editingObj.obj.id !== group.id) context.fillText(group.name, bounds.x + 5, bounds.y + 5);
+}
+function drawNode(context, node, isExport) {
+    const spec = getSize(node); const x = node.x, y = node.y, w = spec.w, h = spec.h;
+    if (node.type === 'joint') {
+        context.fillStyle = '#333'; context.beginPath(); context.arc(x + w/2, y + h/2, w/2, 0, Math.PI * 2); context.fill();
+        if (!isExport && selection.nodes.has(node.id)) { context.strokeStyle = '#007bff'; context.lineWidth = 2; context.stroke(); } return;
+    }
+    context.shadowColor = 'rgba(0,0,0,0.1)'; context.shadowBlur = 4; context.shadowOffsetX = 2; context.shadowOffsetY = 2;
+    context.fillStyle = node.bgColor; context.beginPath(); if(context.roundRect) context.roundRect(x, y, w, h, 6); else context.rect(x, y, w, h); context.fill();
+    context.shadowColor = 'transparent'; context.lineWidth = 2;
+    if (!isExport && selection.nodes.has(node.id)) context.strokeStyle = '#007bff';
+    else if (!isExport && mode === 'connect' && node.id === connectStartNode) context.strokeStyle = '#dc3545';
+    else if (node.bgColor === 'transparent') context.strokeStyle = 'transparent'; else context.strokeStyle = '#333';
+    context.stroke();
+    if (!editingObj || editingObj.obj.id !== node.id) {
+        context.fillStyle = node.textColor; const fs = node.fontSize || spec.fontSize; context.font = `${fs}px sans-serif`;
+        context.textAlign = 'center'; context.textBaseline = 'middle'; const text = node.text || '';
+        if (node.isVertical) {
+            const lineHeight = fs * 1.2; const totalHeight = text.length * lineHeight; let startY = y + (h - totalHeight) / 2 + lineHeight / 2; const cx = x + w / 2;
+            for (let i = 0; i < text.length; i++) context.fillText(text[i], cx, startY + i * lineHeight - lineHeight/2);
+        } else {
+            const maxTextW = w - 10; let drawText = text;
+            if (node.bgColor !== 'transparent' && context.measureText(drawText).width > maxTextW) { while (context.measureText(drawText + '...').width > maxTextW && drawText.length > 0) drawText = drawText.slice(0, -1); drawText += '...'; }
+            context.fillText(drawText, x + w/2, y + h/2);
+        }
+    }
+    if (!isExport && selection.nodes.has(node.id)) {
+        context.fillStyle = 'white'; context.strokeStyle = '#007bff'; context.lineWidth = 1;
+        context.fillRect(x + w - 4, y + h - 4, 8, 8); context.strokeRect(x + w - 4, y + h - 4, 8, 8);
+    }
+}
+function drawConnection(context, conn, isExport) {
+    const geo = conn._geometry; if(!geo) return; 
+    context.beginPath(); 
+    if (conn.shape === 'elbow') {
+        const x1=geo.x1, y1=geo.y1, x2=geo.x2, y2=geo.y2; const d1=geo.dir1;
+        context.moveTo(x1, y1);
+        if (d1 === 'left' || d1 === 'right') { context.lineTo(x2, y1); context.lineTo(x2, y2); } // H -> V
+        else { context.lineTo(x1, y2); context.lineTo(x2, y2); } // V -> H
+    } else { context.moveTo(geo.x1, geo.y1); context.lineTo(geo.x2, geo.y2); }
+    let strokeColor = (conn.color || '#555555'); if (!isExport && selection.conns.has(conn.id)) strokeColor = '#007bff';
+    let lineWidth = conn.width === 'thick' ? 4 : 1.5;
+    if (!isExport && !selection.conns.has(conn.id) && isDragging && dragTarget === 'node') {
+        if (Math.abs(geo.y1 - geo.y2) < 0.5 || Math.abs(geo.x1 - geo.x2) < 0.5) strokeColor = '#28a745'; 
+    }
+    context.strokeStyle = strokeColor; context.lineWidth = lineWidth;
+    if (conn.style === 'dotted') context.setLineDash([5, 5]); else context.setLineDash([]);
+    context.stroke(); context.setLineDash([]);
+    let endAngle, startAngle;
+    if (conn.shape === 'elbow') {
+         const x1=geo.x1, y1=geo.y1, x2=geo.x2, y2=geo.y2; const d1=geo.dir1;
+         if (d1 === 'left' || d1 === 'right') { endAngle = (y2 >= y1) ? Math.PI/2 : -Math.PI/2; if(Math.abs(y1-y2)<0.1) endAngle = (x2 >= x1) ? 0 : Math.PI; startAngle = (x2 >= x1) ? Math.PI : 0; } 
+         else { endAngle = (x2 >= x1) ? 0 : Math.PI; startAngle = (y2 >= y1) ? -Math.PI/2 : Math.PI/2; }
+    } else { endAngle = Math.atan2(geo.y2 - geo.y1, geo.x2 - geo.x1); startAngle = Math.atan2(geo.y1 - geo.y2, geo.x1 - geo.x2); }
+    if (conn.arrowEnd) drawArrowHeadAtAngle(context, geo.x2, geo.y2, endAngle, context.strokeStyle);
+    if (conn.arrowStart) drawArrowHeadAtAngle(context, geo.x1, geo.y1, startAngle, context.strokeStyle);
+    if (conn.text && (!editingObj || editingObj.obj.id !== conn.id)) {
+        const mx = (geo.x1 + geo.x2) / 2, my = (geo.y1 + geo.y2) / 2;
+        context.font = '12px sans-serif'; const tw = context.measureText(conn.text).width;
+        context.fillStyle = 'rgba(255,255,255,0.8)'; context.fillRect(mx - tw/2 - 2, my - 8, tw + 4, 16);
+        context.fillStyle = '#000'; context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillText(conn.text, mx, my);
+    }
+}
+function drawArrowHeadAtAngle(context, x, y, angle, color) {
+    const headLen = 10; context.beginPath(); context.moveTo(x, y);
+    context.lineTo(x - headLen * Math.cos(angle - Math.PI / 6), y - headLen * Math.sin(angle - Math.PI / 6));
+    context.lineTo(x - headLen * Math.cos(angle + Math.PI / 6), y - headLen * Math.sin(angle + Math.PI / 6));
+    context.lineTo(x, y); context.fillStyle = color; context.fill();
+}
+function drawConnectionFallback(context, conn, f, t) {
+    const fx = f.x+f.w/2, fy = f.y+f.h/2; const tx = t.x+t.w/2, ty = t.y+t.h/2;
+    context.beginPath(); context.moveTo(fx, fy); context.lineTo(tx, ty); context.strokeStyle = '#ccc'; context.lineWidth = 1; context.stroke();
+}
+
+function getMousePos(e) {
+    const rect = canvas.getBoundingClientRect(); return { x: (e.clientX - rect.left - camera.x) / camera.zoom, y: (e.clientY - rect.top - camera.y) / camera.zoom, rawX: e.clientX - rect.left, rawY: e.clientY - rect.top };
+}
+function hitTest(x, y) {
+    for (const id of selection.nodes) {
+        const n = currentMap.nodes.find(no => no.id === id);
+        if(n && n.type !== 'joint') {
+            const s = getSize(n); const hx = n.x + s.w, hy = n.y + s.h;
+            if (x >= hx - 5 && x <= hx + 5 && y >= hy - 5 && y <= hy + 5) return { type: 'handle', obj: n };
+        }
+    }
+    for (let i = currentMap.nodes.length - 1; i >= 0; i--) {
+        const n = currentMap.nodes[i]; const s = getSize(n); const hitMargin = n.type === 'joint' ? 5 : 0;
+        if (x >= n.x - hitMargin && x <= n.x + s.w + hitMargin && y >= n.y - hitMargin && y <= n.y + s.h + hitMargin) return { type: 'node', obj: n };
+    }
+    for (const c of currentMap.connections) {
+        if (!c._geometry) continue;
+        if (connHitTest(x, y, c._geometry, c.shape)) return { type: 'conn', obj: c };
+    }
+    if(currentMap.groups) {
+        for (const g of currentMap.groups) {
+            const b = getObjBounds(g.id);
+            if(b) {
+                if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+                    if (y <= b.y + 20) return { type: 'group', obj: g, part: 'title' };
+                    return { type: 'group', obj: g, part: 'body' };
+                }
+            }
+        }
+    }
+    return null;
+}
+function connHitTest(x, y, geo, shape) {
+    if (shape === 'elbow') {
+        const x1=geo.x1, y1=geo.y1, x2=geo.x2, y2=geo.y2; const d1=geo.dir1;
+        let dist1=999, dist2=999;
+        if (d1 === 'left' || d1 === 'right') { dist1 = pointToLineDistance(x, y, x1, y1, x2, y1); dist2 = pointToLineDistance(x, y, x2, y1, x2, y2); } 
+        else { dist1 = pointToLineDistance(x, y, x1, y1, x1, y2); dist2 = pointToLineDistance(x, y, x1, y2, x2, y2); }
+        return (dist1 < 10 || dist2 < 10);
+    } else { return pointToLineDistance(x, y, geo.x1, geo.y1, geo.x2, geo.y2) < 10; }
+}
+function pointToLineDistance(px, py, x1, y1, x2, y2) {
+    const A = px - x1, B = py - y1, C = x2 - x1, D = y2 - y1; const dot = A * C + B * D, lenSq = C * C + D * D;
+    let param = -1; if (lenSq !== 0) param = dot / lenSq; let xx, yy; if (param < 0) { xx = x1; yy = y1; } else if (param > 1) { xx = x2; yy = y2; } else { xx = x1 + param * C; yy = y1 + param * D; }
+    const dx = px - xx, dy = py - yy; return Math.sqrt(dx * dx + dy * dy);
+}
+
+function handleMouseDown(e) {
+    if(!currentMap) return;
+    const pos = getMousePos(e);
+    dragStart = { x: pos.rawX, y: pos.rawY };
+
+    if (e.button === 0) {
+        const hit = hitTest(pos.x, pos.y);
+        if (!hit && mode !== 'connect') {
+             longPressTimer = setTimeout(() => {
+                 isMarquee = true;
+                 marqueeRect = { x1: pos.rawX, y1: pos.rawY, x2: pos.rawX, y2: pos.rawY };
+                 dragTarget = null; isDragging = false;
+             }, 500); 
+        }
+        if (mode === 'connect') {
+            if (hit && (hit.type === 'node' || hit.type === 'group')) {
+                if (!connectStartNode) { connectStartNode = hit.obj.id; }
+                else if (connectStartNode !== hit.obj.id) {
+                    currentMap.connections.push({ id: 'c_'+Date.now(), from: connectStartNode, to: hit.obj.id, style: 'solid', width: 'thin', color: '#555555', arrowEnd: false, arrowStart: false });
+                    recordHistory(); selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); connectStartNode = null;
+                }
+                draw();
+            } else { connectStartNode = null; draw(); }
+            return;
+        }
+        if (hit) {
+            clearTimeout(longPressTimer); 
+            if (hit.type === 'handle') { dragTarget = 'handle'; resizeTargetId = hit.obj.id; isDragging = true; }
+            else if (hit.type === 'node') {
+                if (!e.ctrlKey && !e.shiftKey && !selection.nodes.has(hit.obj.id)) { selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); }
+                selection.nodes.add(hit.obj.id); dragTarget = 'node'; isDragging = true; isNodeMoved = false;
+            } else if (hit.type === 'conn') {
+                if (!e.ctrlKey && !e.shiftKey) { selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); }
+                selection.conns.add(hit.obj.id);
+            } else if (hit.type === 'group') {
+                if (!e.ctrlKey && !e.shiftKey && !selection.groups.has(hit.obj.id)) { selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); }
+                selection.groups.add(hit.obj.id); dragTarget = 'group'; isDragging = true; isNodeMoved = false;
+            }
+        } else {
+             if (!e.ctrlKey && !e.shiftKey) { selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); }
+             dragTarget = 'bg'; isDragging = true; 
+        }
+        draw();
+    } else if (e.button === 1) { dragTarget = 'bg'; isDragging = true; e.preventDefault(); }
+}
+function handleMouseMove(e) {
+    if(!currentMap) return;
+    const pos = getMousePos(e);
+    if (longPressTimer && (Math.abs(pos.rawX - dragStart.x) > 5 || Math.abs(pos.rawY - dragStart.y) > 5)) { clearTimeout(longPressTimer); longPressTimer = null; }
+    if (isMarquee) { marqueeRect.x2 = pos.rawX; marqueeRect.y2 = pos.rawY; draw(); return; }
+    if (!isDragging) return;
+    const dx = pos.rawX - dragStart.x, dy = pos.rawY - dragStart.y;
+    dragStart = { x: pos.rawX, y: pos.rawY };
+    snapLines = [];
+    if (dragTarget === 'bg') { camera.x += dx; camera.y += dy; }
+    else if (dragTarget === 'handle') {
+        const node = currentMap.nodes.find(n => n.id === resizeTargetId);
+        if(node) {
+            const worldDx = dx / camera.zoom; const worldDy = dy / camera.zoom;
+            if(!node.w) { const s = SIZES[node.size]; node.w = s.w; node.h = s.h; }
+            node.w = Math.max(20, node.w + worldDx); node.h = Math.max(20, node.h + worldDy);
+            isNodeMoved = true;
+        }
+    } else if (dragTarget === 'node') {
+        const worldDx = dx / camera.zoom; const worldDy = dy / camera.zoom;
+        if (worldDx!==0 || worldDy!==0) isNodeMoved = true;
+        let snapX = 0, snapY = 0;
+        if (selection.nodes.size === 1) {
+            const tId = [...selection.nodes][0]; const tNode = currentMap.nodes.find(n => n.id === tId);
+            if(tNode) {
+                const ts = getSize(tNode);
+                const tCx = tNode.x + ts.w/2 + worldDx, tCy = tNode.y + ts.h/2 + worldDy;
+                const th = 4/camera.zoom;
+                let sX = false, sY = false;
+                currentMap.nodes.forEach(o => {
+                    if (o.id === tId) return;
+                    const os = getSize(o); const oCx = o.x + os.w/2, oCy = o.y + os.h/2;
+                    if (!sX && Math.abs(tCx - oCx) < th) { snapX = oCx - (tNode.x + ts.w/2); snapLines.push({type:'v', val:oCx}); sX = true; }
+                    if (!sY && Math.abs(tCy - oCy) < th) { snapY = oCy - (tNode.y + ts.h/2); snapLines.push({type:'h', val:oCy}); sY = true; }
+                });
+            }
+        }
+        selection.nodes.forEach(id => { const n = currentMap.nodes.find(no => no.id === id); if(n) { n.x += worldDx+snapX; n.y += worldDy+snapY; } });
+    } else if (dragTarget === 'group') {
+        const worldDx = dx / camera.zoom; const worldDy = dy / camera.zoom;
+        if (worldDx!==0 || worldDy!==0) isNodeMoved = true;
+        selection.groups.forEach(gid => {
+            const g = currentMap.groups.find(gr => gr.id === gid);
+            if(g) g.nodeIds.forEach(nid => { const n = currentMap.nodes.find(no => no.id === nid); if(n) { n.x += worldDx; n.y += worldDy; } });
+        });
+    }
+    draw();
+}
+function handleMouseUp() {
+    clearTimeout(longPressTimer); longPressTimer = null;
+    if (isMarquee && marqueeRect) {
+        const x1 = Math.min(marqueeRect.x1, marqueeRect.x2), x2 = Math.max(marqueeRect.x1, marqueeRect.x2);
+        const y1 = Math.min(marqueeRect.y1, marqueeRect.y2), y2 = Math.max(marqueeRect.y1, marqueeRect.y2);
+        selection.nodes.clear(); selection.conns.clear(); selection.groups.clear();
+        const wx1 = (x1 - camera.x) / camera.zoom, wy1 = (y1 - camera.y) / camera.zoom;
+        const wx2 = (x2 - camera.x) / camera.zoom, wy2 = (y2 - camera.y) / camera.zoom;
+        currentMap.nodes.forEach(n => { const s = getSize(n); if (n.x >= wx1 && n.x + s.w <= wx2 && n.y >= wy1 && n.y + s.h <= wy2) selection.nodes.add(n.id); });
+        isMarquee = false; marqueeRect = null; draw(); return;
+    }
+    isDragging = false; dragTarget = null; resizeTargetId = null; snapLines = [];
+    if (isNodeMoved) { recordHistory(); isNodeMoved = false; }
+    draw();
+}
+function handleDoubleClick(e) {
+    if(!currentMap || mode === 'connect') return;
+    const pos = getMousePos(e);
+    const hit = hitTest(pos.x, pos.y);
+    if (hit) startEditing(hit.obj, hit.type);
+}
+function handleContextMenu(e) {
+    e.preventDefault(); if(!currentMap) return;
+    const pos = getMousePos(e); const hit = hitTest(pos.x, pos.y);
+    if (!hit) { selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); draw(); contextMenu.style.display = 'none'; return; }
+    if (hit) {
+        if(hit.type === 'node' && !selection.nodes.has(hit.obj.id)) { selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); selection.nodes.add(hit.obj.id); }
+        else if(hit.type === 'group' && !selection.groups.has(hit.obj.id)) { selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); selection.groups.add(hit.obj.id); }
+        else if (hit.type === 'conn' && !selection.conns.has(hit.obj.id)) { selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); selection.conns.add(hit.obj.id); }
+        draw();
+    }
+    contextMenu.innerHTML = '';
+    if (hit.type === 'conn' && selection.conns.size === 1) {
+        const branchItem = document.createElement('div'); branchItem.className = 'ctx-item'; branchItem.innerHTML = '<span>分岐点を作成</span>';
+        branchItem.onclick = () => { insertJointNode(hit.obj.id); contextMenu.style.display = 'none'; }; contextMenu.appendChild(branchItem);
+        const div = document.createElement('div'); div.className = 'ctx-divider'; contextMenu.appendChild(div);
+    }
+    if (hit.type === 'group' && selection.groups.size === 1) {
+        const addNodeItem = document.createElement('div'); addNodeItem.className = 'ctx-item'; addNodeItem.innerHTML = '<span>グループ内にノード追加</span>';
+        addNodeItem.onclick = () => { 
+            let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+            hit.obj.nodeIds.forEach(nid => { const n = currentMap.nodes.find(no => no.id === nid); if(n) { minX=Math.min(minX,n.x); minY=Math.min(minY,n.y); maxX=Math.max(maxX,n.x); maxY=Math.max(maxY,n.y); } });
+            const targetX = (minX === Infinity) ? pos.x : (minX + maxX)/2; const targetY = (minX === Infinity) ? pos.y : (minY + maxY)/2;
+            addNewNodeToGroup(hit.obj.id, targetX, targetY); contextMenu.style.display = 'none'; 
+        }; contextMenu.appendChild(addNodeItem);
+    }
+    const selectedGroups = Array.from(selection.groups); const selectedNodes = Array.from(selection.nodes);
+    if (selectedGroups.length === 1 && selectedNodes.length > 0) {
+        const addToGroupItem = document.createElement('div'); addToGroupItem.className = 'ctx-item'; addToGroupItem.innerHTML = '<span>選択ノードをグループに追加</span>';
+        addToGroupItem.onclick = () => { addNodesToGroup(selectedGroups[0], selectedNodes); contextMenu.style.display = 'none'; }; contextMenu.appendChild(addToGroupItem);
+    }
+    if (selectedNodes.length > 0) {
+        const belongingGroups = currentMap.groups ? currentMap.groups.filter(g => g.nodeIds.some(nid => selection.nodes.has(nid))) : [];
+        if (belongingGroups.length > 0) {
+             const removeFromGroupItem = document.createElement('div'); removeFromGroupItem.className = 'ctx-item'; removeFromGroupItem.innerHTML = '<span>グループから除外</span>';
+             removeFromGroupItem.onclick = () => { removeNodesFromGroups(selectedNodes); contextMenu.style.display = 'none'; }; contextMenu.appendChild(removeFromGroupItem);
+        }
+    }
+    const copyItem = document.createElement('div'); copyItem.className = 'ctx-item'; copyItem.innerHTML = '<span>コピー</span><span class="ctx-shortcut">Ctrl+C</span>'; copyItem.onclick = () => { copySelection(); contextMenu.style.display = 'none'; }; contextMenu.appendChild(copyItem);
+    if(clipboard) { const pasteItem = document.createElement('div'); pasteItem.className = 'ctx-item'; pasteItem.innerHTML = '<span>貼り付け</span><span class="ctx-shortcut">Ctrl+V</span>'; pasteItem.onclick = () => { pasteSelection(pos.x, pos.y); contextMenu.style.display = 'none'; }; contextMenu.appendChild(pasteItem); }
+    if(selection.nodes.size >= 1) { const div = document.createElement('div'); div.className = 'ctx-divider'; contextMenu.appendChild(div); const groupItem = document.createElement('div'); groupItem.className = 'ctx-item'; groupItem.innerHTML = '<span>グループ化</span>'; groupItem.onclick = () => { createGroup(); contextMenu.style.display = 'none'; }; contextMenu.appendChild(groupItem); }
+    const div2 = document.createElement('div'); div2.className = 'ctx-divider'; contextMenu.appendChild(div2); const delItem = document.createElement('div'); delItem.className = 'ctx-item'; delItem.innerHTML = '<span>削除</span><span class="ctx-shortcut">Del</span>'; delItem.onclick = () => { deleteSelection(); contextMenu.style.display = 'none'; }; contextMenu.appendChild(delItem);
+    contextMenu.style.display = 'block'; contextMenu.style.left = e.clientX + 'px'; contextMenu.style.top = e.clientY + 'px';
+}
+function handleKeyDown(e) {
+    if (e.target === textEditor || e.target.classList.contains('map-name-input')) return;
+    if (e.target.tagName === 'INPUT') return; 
+    if (!currentMap) return;
+    if ((e.ctrlKey||e.metaKey) && e.key === 'c') { copySelection(); return; }
+    if ((e.ctrlKey||e.metaKey) && e.key === 'v') { 
+        const r = canvas.getBoundingClientRect();
+        pasteSelection((r.width/2-camera.x)/camera.zoom-50, (r.height/2-camera.y)/camera.zoom-50); return; 
+    }
+    if ((e.ctrlKey||e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); return; }
+    if ((e.ctrlKey||e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); redo(); return; }
+    if ((e.ctrlKey||e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        currentMap.nodes.forEach(n => selection.nodes.add(n.id));
+        currentMap.connections.forEach(c => selection.conns.add(c.id));
+        draw(); return;
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') deleteSelection();
+}
+function handleWheel(e) {
+    if(!currentMap) return; e.preventDefault();
+    const scaleFactor = 0.1; const direction = e.deltaY > 0 ? -1 : 1; const newZoom = Math.min(Math.max(0.1, camera.zoom + (direction * scaleFactor)), 5);
+    const rect = canvas.getBoundingClientRect(); adjustZoomCentered(newZoom, e.clientX - rect.left, e.clientY - rect.top);
+}
+
+function zoomCanvas(amount) { const newZoom = Math.min(Math.max(0.1, camera.zoom + amount), 5); adjustZoomCentered(newZoom, canvas.width/2, canvas.height/2); }
+function resetZoom() { adjustZoomCentered(1, canvas.width/2, canvas.height/2); }
+function adjustZoomCentered(newZoom, cx, cy) {
+    const wx = (cx - camera.x) / camera.zoom; const wy = (cy - camera.y) / camera.zoom;
+    camera.zoom = newZoom; camera.x = cx - (wx * newZoom); camera.y = cy - (wy * newZoom);
+    draw();
+}
+function addNode() {
+    if(!currentMap) return; if (mode === 'connect') { alert('エッジモード中不可'); return; }
+    const rect = canvas.getBoundingClientRect(); const cx = (rect.width/2 - camera.x)/camera.zoom, cy = (rect.height/2 - camera.y)/camera.zoom;
+    const newNode = { id: 'n_' + Date.now(), x: cx-60, y: cy-30, text: 'Node', size: 'M', bgColor: '#ffffff', textColor: '#000000' };
+    currentMap.nodes.push(newNode); selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); selection.nodes.add(newNode.id); recordHistory(); draw();
+}
+function addTextNode() {
+    if(!currentMap) return; if (mode === 'connect') { alert('エッジモード中不可'); return; }
+    const rect = canvas.getBoundingClientRect(); const cx = (rect.width/2 - camera.x)/camera.zoom, cy = (rect.height/2 - camera.y)/camera.zoom;
+    const newNode = { id: 'n_' + Date.now(), x: cx-60, y: cy-15, text: 'Text', size: 'S', bgColor: 'transparent', textColor: '#000000' };
+    currentMap.nodes.push(newNode); selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); selection.nodes.add(newNode.id); recordHistory(); draw();
+}
+function insertJointNode(connId) {
+    const connIndex = currentMap.connections.findIndex(c => c.id === connId); if (connIndex === -1) return;
+    const conn = currentMap.connections[connIndex];
+    const fromNode = currentMap.nodes.find(n => n.id === conn.from); const toNode = currentMap.nodes.find(n => n.id === conn.to); if(!fromNode || !toNode) return;
+    const fs = getSize(fromNode); const ts = getSize(toNode);
+    const fx = fromNode.x + fs.w/2; const fy = fromNode.y + fs.h/2; const tx = toNode.x + ts.w/2; const ty = toNode.y + ts.h/2;
+    const mx = (fx + tx) / 2; const my = (fy + ty) / 2;
+    const newNode = { id: 'n_' + Date.now(), type: 'joint', x: mx - 4, y: my - 4, text: '', size: 'JOINT', bgColor: '#000000', textColor: '#000000' };
+    const newConn1 = { id: 'c_' + Date.now() + '_1', from: conn.from, to: newNode.id, style: conn.style, width: conn.width, color: conn.color, shape: conn.shape, arrowEnd: false, arrowStart: false };
+    const newConn2 = { id: 'c_' + Date.now() + '_2', from: newNode.id, to: conn.to, style: conn.style, width: conn.width, color: conn.color, shape: conn.shape, arrowEnd: conn.arrowEnd, arrowStart: conn.arrowStart };
+    currentMap.nodes.push(newNode); currentMap.connections.splice(connIndex, 1); currentMap.connections.push(newConn1); currentMap.connections.push(newConn2);
+    selection.nodes.clear(); selection.conns.clear(); selection.nodes.add(newNode.id); recordHistory(); draw();
+}
+function addNewNodeToGroup(groupId, x, y) {
+    const group = currentMap.groups.find(g => g.id === groupId); if (!group) return;
+    const newNode = { id: 'n_' + Date.now(), x: x - 60, y: y - 30, text: 'Node', size: 'M', bgColor: '#ffffff', textColor: '#000000' };
+    currentMap.nodes.push(newNode); group.nodeIds.push(newNode.id);
+    selection.nodes.clear(); selection.conns.clear(); selection.groups.clear(); selection.nodes.add(newNode.id); recordHistory(); draw();
+}
+function addNodesToGroup(groupId, nodeIds) {
+    const group = currentMap.groups.find(g => g.id === groupId); if (!group) return;
+    nodeIds.forEach(nid => { if (!group.nodeIds.includes(nid)) group.nodeIds.push(nid); }); recordHistory(); draw();
+}
+function removeNodesFromGroups(nodeIds) {
+    if (!currentMap.groups) return; let changed = false;
+    currentMap.groups.forEach(g => { const originalLen = g.nodeIds.length; g.nodeIds = g.nodeIds.filter(nid => !nodeIds.includes(nid)); if (g.nodeIds.length !== originalLen) changed = true; });
+    if (changed) { recordHistory(); draw(); }
+}
+function copySelection() {
+    if(selection.nodes.size===0 && selection.groups.size===0) return;
+    const nodes = currentMap.nodes.filter(n => selection.nodes.has(n.id)); const groups = currentMap.groups ? currentMap.groups.filter(g => selection.groups.has(g.id)) : [];
+    groups.forEach(g => { g.nodeIds.forEach(nid => { const n = currentMap.nodes.find(no => no.id === nid); if(n && !selection.nodes.has(nid)) nodes.push(n); }); });
+    const nodeIds = new Set(nodes.map(n => n.id)); const conns = currentMap.connections.filter(c => nodeIds.has(c.from) && nodeIds.has(c.to));
+    clipboard = { nodes: JSON.parse(JSON.stringify(nodes)), conns: JSON.parse(JSON.stringify(conns)), groups: JSON.parse(JSON.stringify(groups)) }; showToastMsg("コピーしました");
+}
+function pasteSelection(targetX, targetY) {
+    if(!clipboard) return;
+    let minX = Infinity, minY = Infinity; clipboard.nodes.forEach(n => { minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); });
+    let offX = 20, offY = 20; if (targetX !== undefined) { offX = targetX - minX; offY = targetY - minY; }
+    selection.nodes.clear(); selection.conns.clear(); selection.groups.clear();
+    const idMap = {};
+    clipboard.nodes.forEach(n => {
+        const newId = 'n_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5); idMap[n.id] = newId;
+        const newNode = JSON.parse(JSON.stringify(n)); newNode.id = newId; newNode.x += offX; newNode.y += offY;
+        currentMap.nodes.push(newNode); selection.nodes.add(newId);
+    });
+    clipboard.conns.forEach(c => {
+        if(idMap[c.from] && idMap[c.to]) {
+            const newConn = JSON.parse(JSON.stringify(c)); newConn.id = 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+            newConn.from = idMap[c.from]; newConn.to = idMap[c.to]; currentMap.connections.push(newConn); selection.conns.add(newConn.id);
+        }
+    });
+    if(clipboard.groups) {
+        clipboard.groups.forEach(g => {
+            const newGroup = JSON.parse(JSON.stringify(g)); newGroup.id = 'g_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+            newGroup.nodeIds = newGroup.nodeIds.map(nid => idMap[nid]).filter(nid => nid);
+            if(!currentMap.groups) currentMap.groups = []; currentMap.groups.push(newGroup); selection.groups.add(newGroup.id);
+        });
+    }
+    recordHistory(); draw();
+}
+function createGroup() {
+    const nodeIds = Array.from(selection.nodes); if(nodeIds.length < 1) return;
+    const newGroup = { id: 'g_' + Date.now(), name: 'New Group', nodeIds: nodeIds, color: '#666666' };
+    if(!currentMap.groups) currentMap.groups = []; currentMap.groups.push(newGroup);
+    selection.nodes.clear(); selection.groups.add(newGroup.id); recordHistory(); draw();
+}
+function checkSameValue(items, key) {
+    if (items.length === 0) return { same: false, value: null };
+    const val = items[0][key]; for (let i = 1; i < items.length; i++) if (items[i][key] !== val) return { same: false, value: null };
+    return { same: true, value: val };
+}
+function updateUI() {
+    const panel = document.getElementById('property-panel'); const pNodes = document.getElementById('panel-nodes'); const pEdges = document.getElementById('panel-edges'); const pGroups = document.getElementById('panel-groups');
+    const hasN = selection.nodes.size > 0; const hasC = selection.conns.size > 0; const hasG = selection.groups.size > 0;
+    if (hasN || hasC || hasG) {
+        panel.style.display = 'flex'; pNodes.style.display = hasN ? 'flex' : 'none'; pEdges.style.display = hasC ? 'flex' : 'none'; pGroups.style.display = hasG ? 'flex' : 'none';
+        if(hasN) {
+            const objs = currentMap.nodes.filter(n => selection.nodes.has(n.id));
+            const bgC = checkSameValue(objs, 'bgColor'); const txtC = checkSameValue(objs, 'textColor');
+            if(bgC.same) document.getElementById('picker-bg').value = bgC.value === 'transparent' ? '#ffffff' : bgC.value;
+            if(txtC.same) document.getElementById('picker-text').value = txtC.value;
+            const fsC = checkSameValue(objs, 'fontSize'); const inpF = document.getElementById('input-font-size');
+            if(fsC.same && fsC.value) inpF.value = fsC.value; else if(objs.length > 0) inpF.value = objs[0].fontSize || SIZES.M.fontSize;
+            const vC = checkSameValue(objs, 'isVertical'); const btnV = document.getElementById('btn-text-vertical');
+            if(vC.same && vC.value) btnV.classList.add('selected-state'); else btnV.classList.remove('selected-state');
+            const wC = checkSameValue(objs, 'w'); const hC = checkSameValue(objs, 'h'); const sizeC = checkSameValue(objs, 'size'); 
+            const inpW = document.getElementById('input-width'); const inpH = document.getElementById('input-height');
+            if(wC.same && wC.value) inpW.value = wC.value; else if(sizeC.same && sizeC.value) inpW.value = SIZES[sizeC.value].w; else inpW.value = '';
+            if(hC.same && hC.value) inpH.value = hC.value; else if(sizeC.same && sizeC.value) inpH.value = SIZES[sizeC.value].h; else inpH.value = '';
+        }
+        if(hasC) {
+            const objs = currentMap.connections.filter(c => selection.conns.has(c.id));
+            const colC = checkSameValue(objs, 'color'); if(colC.same) document.getElementById('picker-line-color').value = colC.value || '#555555';
+            const startC = checkSameValue(objs, 'arrowStart'); const endC = checkSameValue(objs, 'arrowEnd');
+            document.getElementById('btn-arrow-one').classList.toggle('selected-state', !startC.value && endC.value);
+            document.getElementById('btn-arrow-both').classList.toggle('selected-state', startC.value && endC.value);
+            const shapeC = checkSameValue(objs, 'shape');
+            document.getElementById('btn-shape-straight').classList.toggle('selected-state', !shapeC.same || shapeC.value !== 'elbow');
+            document.getElementById('btn-shape-elbow').classList.toggle('selected-state', shapeC.same && shapeC.value === 'elbow');
+        }
+        if(hasG) {
+            const objs = currentMap.groups.filter(g => selection.groups.has(g.id));
+            const colC = checkSameValue(objs, 'color'); if(colC.same) document.getElementById('picker-group-color').value = colC.value || '#666666';
+            const wC = checkSameValue(objs, 'width');
+            document.getElementById('btn-g-width-thin').classList.toggle('selected-state', wC.same && wC.value !== 'thick');
+            document.getElementById('btn-g-width-thick').classList.toggle('selected-state', wC.same && wC.value === 'thick');
+        }
+    } else { panel.style.display = 'none'; }
+}
+function updateStyle(key, val) {
+    if(!currentMap) return; let changed = false; if(key==='fontSize' || key==='width' || key==='height') val = parseInt(val);
+    selection.nodes.forEach(id => {
+        const n = currentMap.nodes.find(no => no.id === id);
+        if(n) {
+            if(key==='bgColor') n.bgColor = val; if(key==='textColor') n.textColor = val; if(key==='fontSize') n.fontSize = val;
+            if(key==='size') { n.size = val; delete n.w; delete n.h; }
+            if(key==='width') { n.w = val; if(!n.h) n.h=SIZES[n.size].h; } 
+            if(key==='height') { n.h = val; if(!n.w) n.w=SIZES[n.size].w; }
+            changed = true;
+        }
+    });
+    selection.conns.forEach(id => {
+        const c = currentMap.connections.find(co => co.id === id);
+        if(c) {
+            if(key==='lineColor') c.color = val; if(key==='lineStyle') c.style = val; if(key==='lineWidth') c.width = val; if(key==='lineShape') c.shape = val;
+            changed = true;
+        }
+    });
+    selection.groups.forEach(id => {
+        const g = currentMap.groups.find(gr => gr.id === id);
+        if(g) {
+            if(key==='groupColor') { g.color = val; changed = true; }
+            if(key==='groupWidth') { g.width = val; changed = true; }
+        }
+    });
+    if(changed) { recordHistory(); draw(); }
+}
+function toggleVertical() {
+    let changed = false; selection.nodes.forEach(id => { const n = currentMap.nodes.find(no => no.id === id); if(n) { n.isVertical = !n.isVertical; changed = true; } });
+    if(changed) { recordHistory(); draw(); }
+}
+function setArrowMode(mode) {
+    let changed = false; selection.conns.forEach(id => {
+        const c = currentMap.connections.find(co => co.id === id);
+        if(c) {
+            const currentMode = (c.arrowStart && c.arrowEnd) ? 'both' : (c.arrowEnd ? 'one' : 'none');
+            if (currentMode === mode) { c.arrowStart = false; c.arrowEnd = false; } else {
+                if (mode === 'none') { c.arrowStart = false; c.arrowEnd = false; }
+                else if (mode === 'one') { c.arrowStart = false; c.arrowEnd = true; }
+                else if (mode === 'both') { c.arrowStart = true; c.arrowEnd = true; }
+            }
+            changed = true;
+        }
+    });
+    if(changed) { recordHistory(); draw(); }
+}
+function reverseEdge() {
+    let changed = false; selection.conns.forEach(id => {
+        const c = currentMap.connections.find(co => co.id === id);
+        if(c) { const tmp = c.from; c.from = c.to; c.to = tmp; changed = true; }
+    });
+    if(changed) { recordHistory(); draw(); }
+}
+function toggleConnectMode() {
+    if (mode === 'connect') { mode = 'select'; connectStartNode = null; updateModeUI(); draw(); return; }
+    selection.conns.clear(); selection.groups.clear();
+    const sel = Array.from(selection.nodes);
+    if (sel.length === 1) { mode = 'connect'; connectStartNode = sel[0]; }
+    else if (sel.length === 2) {
+        currentMap.connections.push({ id: 'c_'+Date.now(), from: sel[0], to: sel[1], style: 'solid', width: 'thin', color: '#555555', arrowEnd: false });
+        recordHistory(); mode = 'connect'; connectStartNode = null; selection.nodes.clear();
+    } else { mode = 'connect'; connectStartNode = null; selection.nodes.clear(); }
+    updateModeUI(); draw();
+}
+function updateModeUI() {
+    const btn = document.getElementById('btn-connect');
+    if (mode === 'connect') { btn.classList.add('active'); btn.innerText = 'モード終了'; }
+    else { btn.classList.remove('active'); btn.innerText = 'エッジモード'; }
+}
+function startEditing(obj, type) {
+    editingObj = { obj, type };
+    const rect = canvas.getBoundingClientRect();
+    let sx, sy, w, h, text, fs, col; let isVertical = false;
+    if (type === 'node') {
+        const s = getSize(obj); sx = obj.x*camera.zoom + camera.x + rect.left; sy = obj.y*camera.zoom + camera.y + rect.top;
+        w = s.w*camera.zoom; h = s.h*camera.zoom; text = obj.text; fs = (obj.fontSize||s.fontSize)*camera.zoom; col = obj.textColor; isVertical = obj.isVertical;
+    } else if (type === 'conn') {
+        const g = obj._geometry; if(!g) return; const mx = (g.x1+g.x2)/2, my = (g.y1+g.y2)/2;
+        w = 150; h = 30; sx = mx*camera.zoom + camera.x + rect.left - w/2; sy = my*camera.zoom + camera.y + rect.top - h/2;
+        text = obj.text||''; fs = 12*camera.zoom; col = '#000';
+    } else if (type === 'group') {
+        let minX=Infinity, minY=Infinity;
+        obj.nodeIds.forEach(nid=>{const n=currentMap.nodes.find(no=>no.id===nid); if(n){minX=Math.min(minX,n.x); minY=Math.min(minY,n.y);}});
+        sx = (minX-20)*camera.zoom + camera.x + rect.left; sy = (minY-40)*camera.zoom + camera.y + rect.top;
+        w = 200; h = 30; text = obj.name; fs = 14*camera.zoom; col = obj.color||'#666';
+    }
+    textEditor.value = text; textEditor.style.display = 'block';
+    textEditor.style.left = sx+'px'; textEditor.style.top = sy+'px';
+    textEditor.style.width = w+'px'; textEditor.style.height = h+'px';
+    textEditor.style.fontSize = fs+'px'; textEditor.style.color = col;
+    if(isVertical) textEditor.style.writingMode = 'vertical-rl'; else textEditor.style.writingMode = 'horizontal-tb';
+    draw(); textEditor.focus(); textEditor.select();
+}
+function finishEditing() {
+    if (!editingObj) return;
+    const { obj, type } = editingObj;
+    let changed = false;
+    if (type === 'node' && obj.text !== textEditor.value) { obj.text = textEditor.value; changed = true; }
+    if (type === 'conn' && obj.text !== textEditor.value) { obj.text = textEditor.value; changed = true; }
+    if (type === 'group' && obj.name !== textEditor.value) { obj.name = textEditor.value; changed = true; }
+    if(changed) recordHistory();
+    textEditor.style.display = 'none'; editingObj = null; draw();
+}
+function alignNodes(dir) {
+    if(!currentMap) return;
+    const targets = currentMap.nodes.filter(n => selection.nodes.has(n.id));
+    if (targets.length < 2) return;
+    if (dir === 'h') {
+        let avgCy = Math.round(targets.reduce((s, n) => s + (n.y + getSize(n).h/2), 0) / targets.length);
+        targets.sort((a, b) => (a.x + getSize(a).w/2) - (b.x + getSize(b).w/2));
+        const minCx = targets[0].x + getSize(targets[0]).w/2;
+        const maxCx = targets[targets.length-1].x + getSize(targets[targets.length-1]).w/2;
+        const totalW = maxCx - minCx;
+        targets.forEach((n, i) => {
+            const s = getSize(n);
+            let newCx = (i===0) ? minCx : (i===targets.length-1) ? maxCx : (minCx + totalW * (i/(targets.length-1)));
+            n.x = Math.round(newCx - s.w/2); n.y = Math.round(avgCy - s.h/2);
+        });
+    } else {
+        let avgCx = Math.round(targets.reduce((s, n) => s + (n.x + getSize(n).w/2), 0) / targets.length);
+        targets.sort((a, b) => (a.y + getSize(a).h/2) - (b.y + getSize(b).h/2));
+        const minCy = targets[0].y + getSize(targets[0]).h/2;
+        const maxCy = targets[targets.length-1].y + getSize(targets[targets.length-1]).h/2;
+        const totalH = maxCy - minCy;
+        targets.forEach((n, i) => {
+            const s = getSize(n);
+            let newCy = (i===0) ? minCy : (i===targets.length-1) ? maxCy : (minCy + totalH * (i/(targets.length-1)));
+            n.x = Math.round(avgCx - s.w/2); n.y = Math.round(newCy - s.h/2);
+        });
+    }
+    recordHistory(); draw();
+}
+function deleteSelection() {
+    if(!currentMap) return;
+    currentMap.nodes = currentMap.nodes.filter(n => !selection.nodes.has(n.id));
+    currentMap.connections = currentMap.connections.filter(c => !selection.conns.has(c.id) && !selection.nodes.has(c.from) && !selection.nodes.has(c.to));
+    if (currentMap.groups) {
+        currentMap.groups = currentMap.groups.filter(g => !selection.groups.has(g.id));
+        currentMap.groups.forEach(g => { g.nodeIds = g.nodeIds.filter(nid => !selection.nodes.has(nid)); });
+        currentMap.groups = currentMap.groups.filter(g => g.nodeIds.length > 0);
+    }
+    selection.nodes.clear(); selection.conns.clear(); selection.groups.clear();
+    recordHistory(); draw();
+}
+function exportSelectionAsImage() {
+    if(!currentMap || (selection.nodes.size === 0 && selection.groups.size === 0)) { alert("ノードまたはグループを選択してください"); return; }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    // ノードのバウンディングボックス計算
+    const nodesToDraw = currentMap.nodes.filter(n => selection.nodes.has(n.id));
+    nodesToDraw.forEach(n => { const s = getSize(n); minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); maxX = Math.max(maxX, n.x + s.w); maxY = Math.max(maxY, n.y + s.h); });
+
+    // グループのバウンディングボックス計算
+    // 選択されたグループと、選択されたノードが含まれるグループを対象にする
+    const groupsToDraw = currentMap.groups ? currentMap.groups.filter(g => 
+        selection.groups.has(g.id) || g.nodeIds.some(nid => selection.nodes.has(nid))
+    ) : [];
+    
+    groupsToDraw.forEach(g => {
+        const b = getObjBounds(g.id); // グループ全体のバウンディングボックスを取得
+        if(b) {
+             minX = Math.min(minX, b.x); minY = Math.min(minY, b.y); maxX = Math.max(maxX, b.x + b.w); maxY = Math.max(maxY, b.y + b.h);
+        }
+    });
+
+    // 範囲が無効な場合（何も選択されていないなど）のガード
+    if (minX === Infinity) return;
+
+    const padding = 20; minX -= padding; minY -= padding; maxX += padding; maxY += padding;
+    const w = maxX - minX; const h = maxY - minY;
+    if (w <= 0 || h <= 0) return;
+
+    const offCanvas = document.createElement('canvas'); offCanvas.width = w; offCanvas.height = h; const offCtx = offCanvas.getContext('2d');
+    offCtx.translate(-minX, -minY);
+    
+    // 描画対象のIDセットを作成（ノードとグループ）
+    const drawTargetIds = new Set();
+    nodesToDraw.forEach(n => drawTargetIds.add(n.id));
+    groupsToDraw.forEach(g => {
+        drawTargetIds.add(g.id); // グループIDも追加
+        if(selection.groups.has(g.id)) {
+             g.nodeIds.forEach(nid => {
+                 const n = currentMap.nodes.find(no => no.id === nid);
+                 if(n) { 
+                     drawTargetIds.add(nid); 
+                     if(!nodesToDraw.includes(n)) nodesToDraw.push(n); 
+                 }
+             });
+        }
+    });
+
+    const connsToDraw = currentMap.connections.filter(c => drawTargetIds.has(c.from) && drawTargetIds.has(c.to));
+    
+    // 描画順序: グループ -> エッジ -> ノード
+    groupsToDraw.forEach(g => drawGroup(offCtx, g, true));
+    connsToDraw.forEach(c => { 
+        if(c._geometry) drawConnection(offCtx, c, true); 
+        else { 
+            const f = getObjBounds(c.from);
+            const t = getObjBounds(c.to); 
+            if(f && t) drawConnectionFallback(offCtx, c, f, t); 
+        } 
+    });
+    nodesToDraw.forEach(n => drawNode(offCtx, n, true));
+    
+    offCanvas.toBlob((blob) => { if (!blob) return; const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.download = 'mindmap_selection.png'; link.href = url; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url); }, 'image/png');
+}
+</script>
+</body>
+</html>
